@@ -292,15 +292,28 @@ async function loadCloudData(userId) {
 async function buildCloudPayload() {
   return DATA;
 }
+function doCloudSave() {
+  if (!sb || !currentUserId) return;
+  buildCloudPayload().then((payload) => {
+    sb.from('todo_data').upsert({ user_id: currentUserId, data: payload, updated_at: new Date().toISOString() })
+      .then(({ error }) => { if (error) console.error('cloud save failed', error); });
+  });
+}
 function scheduleCloudSave() {
   if (!sb || !currentUserId) return;
   clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(async () => {
-    const payload = await buildCloudPayload();
-    sb.from('todo_data').upsert({ user_id: currentUserId, data: payload, updated_at: new Date().toISOString() })
-      .then(({ error }) => { if (error) console.error('cloud save failed', error); });
-  }, 800);
+  cloudSaveTimer = setTimeout(doCloudSave, 800);
 }
+/* 탭을 닫거나 다른 앱으로 전환할 때 800ms 디바운스를 기다리지 않고 바로 저장해서,
+   "PC에서 입력하고 바로 나갔더니 폰에 안 보임" 같은 유실을 막아요. */
+function flushCloudSave() {
+  if (!cloudSaveTimer) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
+  doCloudSave();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushCloudSave(); });
+window.addEventListener('pagehide', flushCloudSave);
 async function onAuthed(userId) {
   currentUserId = userId;
   const { data: { user } } = await sb.auth.getUser();
