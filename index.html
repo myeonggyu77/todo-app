@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>할일</title>
+
+<!-- PWA: 홈 화면에 설치해서 앱처럼 쓸 수 있게 해주는 설정이에요 -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0f6e56">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="할일">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --ink: #1a2420;
+    --ink-soft: #56635c;
+    --ink-faint: #8a958f;
+    --paper: #fbfaf7;
+    --paper-raised: #ffffff;
+    --line: #dcdcd2;
+    --line-soft: #ececE4;
+    --accent: #0f6e56;
+    --accent-soft: #e1f0ea;
+    --accent-tint: #f2f8f5;
+    --accent-line: #9dc9bb;
+    --down: #a32d2d;
+    --down-soft: #fcebeb;
+    --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --status-good: #0ca30c; --status-warn: #d98300; --status-crit: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+  .toolbar .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .search-wrap { flex: 1; max-width: 240px; position: relative; }
+  input.search-input { width: 100%; height: 34px; padding: 0 12px; font-size: 13px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
+  input.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  button.primary-btn { font-family: var(--sans); font-size: 13px; font-weight: 500; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 3px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+  button.primary-btn:hover { background: #000; }
+  button.ghost-btn { font-family: var(--sans); font-size: 13px; background: none; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 3px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+  button.ghost-btn:hover { background: var(--line-soft); }
+  button.ghost-btn.danger-btn { color: var(--down); border-color: #f0c7c7; }
+  button.ghost-btn.danger-btn:hover { background: var(--down-soft); }
+  button.icon-btn { font-family: var(--sans); font-size: 12px; background: none; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; padding: 4px 9px; color: var(--ink-soft); margin-left: 4px; }
+  button.icon-btn:hover { background: var(--line-soft); color: var(--ink); }
+  button.icon-btn.danger { color: var(--down); border-color: var(--down-soft); }
+  button.icon-btn.danger:hover { background: var(--down-soft); }
+
+  input, select, textarea { font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: 3px; padding: 0 9px; background: var(--paper); color: var(--ink); width: 100%; }
+  input, select { height: 34px; }
+  textarea { padding: 9px; min-height: 70px; resize: vertical; line-height: 1.6; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .form-note { font-size: 12px; color: var(--ink-faint); margin-bottom: 8px; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .field-lbl { font-size: 10px; color: var(--ink-faint); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; display: block; }
+  .field { margin-bottom: 12px; }
+  .empty { text-align: center; padding: 40px 0; color: var(--ink-faint); font-size: 13px; }
+
+  .toast-wrap { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast { font-family: var(--sans); font-size: 13px; padding: 10px 16px; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); max-width: 90vw; text-align: center; animation: toast-in 0.2s ease-out; }
+  .toast.error { background: #fcebeb; color: #a32d2d; border: 1px solid #f0c7c7; }
+  .toast.success { background: var(--accent-soft); color: var(--accent); border: 1px solid #b9dfd0; }
+  .toast.info { background: var(--paper-raised); color: var(--ink-soft); border: 1px solid var(--line); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(26,36,32,0.45); z-index: 8000; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+  .modal-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 6px; padding: 20px; width: 100%; max-width: 440px; max-height: 88vh; overflow-y: auto; margin: auto; }
+  .modal-card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+  @media (min-width: 860px) {
+    .modal-overlay.side-panel { background: rgba(26,36,32,0.06); justify-content: flex-end; align-items: stretch; padding: 0; }
+    .modal-overlay.side-panel .modal-card { margin: 0; width: 400px; max-width: 92vw; height: 100vh; max-height: 100vh; border-radius: 0; box-shadow: -8px 0 24px rgba(0,0,0,.14); animation: side-panel-in .16s ease-out; }
+  }
+  @keyframes side-panel-in { from { transform: translateX(28px); opacity: .4; } to { transform: translateX(0); opacity: 1; } }
+
+  .dp-pop { position: fixed; z-index: 10000; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.22); padding: 10px; width: 250px; }
+  .dp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .dp-head .dp-label { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .dp-dow { text-align: center; font-size: 10px; color: var(--ink-faint); padding: 2px 0; }
+  .dp-cell { text-align: center; font-size: 12px; padding: 6px 0; border-radius: 4px; cursor: pointer; color: var(--ink); }
+  .dp-cell:hover { background: var(--line-soft); }
+  .dp-cell.today { box-shadow: inset 0 0 0 1px var(--accent); }
+  .dp-cell.sel { background: var(--accent); color: #fff; font-weight: 600; }
+  .dp-cell.adjacent { color: var(--ink-faint); opacity: .55; }
+  .dp-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .date-field[readonly] { cursor: pointer; }
+
+  #auth-gate { position: fixed; inset: 0; background: var(--paper); z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+  .auth-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 6px; padding: 28px 24px; width: 100%; max-width: 360px; margin: auto; }
+  .auth-card h1 { margin: 0 0 4px; font-size: 20px; }
+  .auth-card .sub { color: var(--ink-faint); font-size: 13px; margin-bottom: 18px; }
+
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+  .seg button { flex: 1; padding: 8px; background: var(--paper-raised); border: none; border-right: 1px solid var(--line); font-size: 13px; cursor: pointer; color: var(--ink-soft); font-family: var(--sans); }
+  .seg button:last-child { border-right: none; }
+  .seg button.active { background: var(--ink); color: var(--paper); }
+
+  .budget-item { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+  .budget-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; gap: 8px; }
+  .budget-track { height: 10px; background: var(--line-soft); border-radius: 5px; overflow: hidden; }
+  .budget-fill { height: 100%; border-radius: 5px; }
+  .budget-fill.ok { background: var(--status-good); }
+  .budget-fill.warn { background: var(--status-warn); }
+  .budget-pct-tag { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+  .budget-pct-tag.ok { color: var(--status-good); background: #eaf7ea; }
+  .budget-pct-tag.warn { color: var(--status-warn); background: #fbf0e0; }
+
+  .acct-master-detail { display: flex; gap: 16px; align-items: flex-start; }
+  .acct-list-pane { width: 260px; flex-shrink: 0; }
+  .acct-detail-pane { flex: 1; min-width: 0; }
+  .acct-list-group { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .acct-list-group-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; padding: 8px 10px; background: var(--line-soft); }
+  .acct-list-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; cursor: pointer; font-size: 13px; border-top: 1px solid var(--line-soft); }
+  .acct-list-row:hover { background: var(--line-soft); }
+  .acct-list-row.selected { background: var(--accent-tint); font-weight: 600; }
+  .acct-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+  .acct-detail-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  @media (max-width: 860px) {
+    .acct-master-detail { display: block; }
+    .acct-list-pane.has-selection { display: none; }
+    .acct-detail-pane { display: none; }
+    .acct-detail-pane.active { display: block; }
+  }
+
+  .emoji-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .emoji-pick button { width: 34px; height: 34px; font-size: 16px; border: 1px solid var(--line); background: var(--paper-raised); border-radius: 4px; cursor: pointer; }
+  .emoji-pick button.active { border-color: var(--accent); background: var(--accent-soft); }
+
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px; }
+  }
+
+  /* ---------------- app shell ---------------- */
+  .todo-app-shell { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+  .todo-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+  .todo-topbar h1 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
+
+  /* ---------------- TODO ---------------- */
+  .todo-pct-badge { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; }
+  .todo-list-body { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .todo-row { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); background: var(--paper-raised); }
+  .todo-row:last-child { border-bottom: none; }
+  .todo-row:hover { background: var(--accent-tint); }
+  .todo-row.done .todo-title { text-decoration: line-through; color: var(--ink-faint); }
+  .todo-drag-handle { cursor: grab; touch-action: none; color: var(--ink-faint); font-size: 14px; flex-shrink: 0; padding: 2px 0; line-height: 1.6; }
+  .todo-check { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; margin-top: 2px; }
+  .todo-main { flex: 1; min-width: 0; }
+  .todo-title { font-size: 13.5px; line-height: 1.5; word-break: break-word; }
+  .todo-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; font-size: 11px; color: var(--ink-faint); }
+  .todo-meta .due { font-family: var(--mono); }
+  .todo-meta .due.overdue { color: var(--down); font-weight: 600; }
+  .todo-meta .rec-badge { color: var(--accent); }
+  .todo-actions { display: flex; gap: 2px; flex-shrink: 0; }
+  .todo-sub-list { margin: 0 0 0 40px; border-left: 2px solid var(--line-soft); }
+  .todo-sub-list .todo-row { padding: 8px 10px; }
+  .todo-empty-list { text-align: center; padding: 16px; color: var(--ink-faint); font-size: 12px; }
+  .todo-date-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; background: var(--accent-soft); color: var(--accent); padding: 2px 6px; border-radius: 3px; margin: 0 4px 4px 0; }
+  .todo-date-chip button { border: none; background: none; color: inherit; cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+  .drag-dragging { z-index: 9999; box-shadow: 0 6px 18px rgba(0,0,0,0.28); opacity: 0.96; pointer-events: none; }
+  .drag-placeholder { border: 2px dashed var(--line); background: var(--line-soft); border-radius: 5px; }
+  .todo-title-hint { font-size: 12px; color: var(--accent); margin: -6px 0 10px; display: none; }
+  .todo-title-hint .usage-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+  .streak-badge { color: #c96a00; }
+
+  /* ---------------- 오늘/캘린더 보기 ---------------- */
+  .todo-view-nav { max-width: 340px; margin-bottom: 16px; }
+  .month-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .month-nav .m-label { font-family: var(--mono); font-size: 14px; font-weight: 600; min-width: 96px; text-align: center; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 20px; }
+  .cal-dow { background: var(--paper); text-align: center; font-size: 11px; color: var(--ink-faint); padding: 6px 0; text-transform: uppercase; }
+  .cal-cell { background: var(--paper-raised); min-height: 60px; padding: 6px; cursor: pointer; }
+  .cal-cell.adjacent { background: var(--paper); }
+  .cal-cell.adjacent .date-num { color: var(--ink-faint); }
+  .cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cal-cell.selected { background: var(--accent-tint); }
+  .cal-cell:hover { background: var(--line-soft); }
+  .cal-cell .date-num { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+  .cal-cell .cal-amt { font-family: var(--mono); font-size: 10.5px; color: var(--accent); margin-top: 3px; }
+</style>
+</head>
+<body>
+<div id="auth-gate">
+  <div class="auth-card">
+    <h1>✅ 할일</h1>
+    <div class="sub" id="auth-sub">로그인하고 계속하세요</div>
+    <div class="seg" id="auth-mode-seg" style="margin-bottom:16px;">
+      <button type="button" class="active" data-v="login" onclick="setAuthMode('login')">로그인</button>
+      <button type="button" data-v="signup" onclick="setAuthMode('signup')">회원가입</button>
+    </div>
+    <div class="field"><label class="field-lbl">이메일</label><input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email"></div>
+    <div class="field"><label class="field-lbl">비밀번호</label><input type="password" id="auth-password" placeholder="6자 이상" autocomplete="current-password" onkeydown="if(event.key==='Enter') submitAuth()"></div>
+    <div class="form-note" id="auth-error" style="display:none;color:var(--down);margin-bottom:10px;"></div>
+    <button class="primary-btn" id="auth-submit-btn" style="width:100%;" onclick="submitAuth()">로그인</button>
+    <div class="form-note" id="auth-hint" style="margin-top:12px;text-align:center;"></div>
+  </div>
+</div>
+<div class="todo-app-shell" id="app-root" style="display:none;">
+  <div class="todo-topbar">
+    <h1>✅ 할일</h1>
+    <button class="ghost-btn" style="font-size:12px;padding:5px 10px;" onclick="signOut()">로그아웃</button>
+  </div>
+  <div id="todo-root"></div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+<div id="modal-root"></div>
+
+<script>
+/* ---------------- cloud login (Supabase) ----------------
+   아래 두 값을 본인의 Supabase 프로젝트 값으로 바꿔주세요.
+   1) https://supabase.com 에서 새 프로젝트 생성
+   2) Project Settings > API 에서 Project URL, anon public key 확인
+   3) SQL Editor에서 이 저장소 README.md에 있는 SQL을 실행해서 todo_data 테이블 생성
+   4) 아래 두 상수에 붙여넣기 */
+const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+let sb = null;
+try {
+  if (window.supabase && window.supabase.createClient && !SUPABASE_URL.startsWith('YOUR_')) {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch (e) { console.error('Supabase init failed', e); }
+
+let authMode = 'login';
+let currentUserId = null;
+let currentUserEmail = null;
+let cloudSaveTimer = null;
+
+function setAuthMode(m) {
+  authMode = m;
+  document.querySelectorAll('#auth-mode-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === m));
+  document.getElementById('auth-submit-btn').textContent = m === 'login' ? '로그인' : '회원가입';
+  document.getElementById('auth-hint').textContent = m === 'signup' ? '가입 후 이메일 인증이 필요할 수 있어요.' : '';
+  document.getElementById('auth-error').style.display = 'none';
+}
+function authErrorMessage(msg) {
+  if (/Invalid login credentials/i.test(msg)) return '이메일 또는 비밀번호가 올바르지 않아요.';
+  if (/already registered|already exists/i.test(msg)) return '이미 가입된 이메일이에요. 로그인해주세요.';
+  if (/Password should be|password.*least/i.test(msg)) return '비밀번호는 6자 이상이어야 해요.';
+  if (/Email not confirmed/i.test(msg)) return '이메일 인증이 필요해요. 받은 메일함을 확인해주세요.';
+  if (/rate limit/i.test(msg)) return '요청이 너무 많아요. 잠시 후 다시 시도해주세요.';
+  return msg || '알 수 없는 오류가 발생했어요.';
+}
+async function submitAuth() {
+  const errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
+  if (!sb) { errEl.textContent = '로그인 서비스가 아직 설정되지 않았어요. README의 안내를 참고해 Supabase 키를 설정해주세요.'; errEl.style.display = 'block'; return; }
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if (!email || !password) { errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; errEl.style.display = 'block'; return; }
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true;
+  try {
+    if (authMode === 'login') {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await onAuthed(data.user.id);
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+      if (data.session) {
+        await onAuthed(data.user.id);
+      } else {
+        errEl.style.color = 'var(--accent)';
+        errEl.textContent = '가입 확인 이메일을 보냈어요. 메일함에서 인증 후 로그인해주세요.';
+        errEl.style.display = 'block';
+        setAuthMode('login');
+      }
+    }
+  } catch (e) {
+    errEl.style.color = 'var(--down)';
+    errEl.textContent = authErrorMessage(e.message);
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function loadCloudData(userId) {
+  const { data, error } = await sb.from('todo_data').select('data').eq('user_id', userId).maybeSingle();
+  if (error) { console.error('cloud load failed', error); return { ok: false }; }
+  return { ok: true, data: data ? data.data : undefined };
+}
+async function buildCloudPayload() {
+  return DATA;
+}
+function scheduleCloudSave() {
+  if (!sb || !currentUserId) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(async () => {
+    const payload = await buildCloudPayload();
+    sb.from('todo_data').upsert({ user_id: currentUserId, data: payload, updated_at: new Date().toISOString() })
+      .then(({ error }) => { if (error) console.error('cloud save failed', error); });
+  }, 800);
+}
+async function onAuthed(userId) {
+  currentUserId = userId;
+  const { data: { user } } = await sb.auth.getUser();
+  try {
+    const result = await loadCloudData(userId);
+    if (result.ok && result.data === undefined) {
+      const payload = await buildCloudPayload();
+      await sb.from('todo_data').upsert({ user_id: userId, data: payload, updated_at: new Date().toISOString() });
+    } else if (result.ok && result.data && Array.isArray(result.data.todoLists)) {
+      const cloudData = result.data;
+      cloudData.todoLists = cloudData.todoLists.length ? cloudData.todoLists : defaultData().todoLists;
+      cloudData.todos = Array.isArray(cloudData.todos) ? cloudData.todos : [];
+      DATA = cloudData;
+      try { localStorage.setItem(LS_KEY, JSON.stringify(DATA)); } catch (e) {}
+    }
+  } catch (e) {
+    console.error('cloud sync on login failed', e);
+  }
+  startTodoApp(user ? user.email : '');
+}
+function signOut() {
+  if (!confirm('로그아웃할까요?')) return;
+  if (sb) sb.auth.signOut();
+  location.reload();
+}
+async function initAuthFlow() {
+  if (!sb) { document.getElementById('auth-gate').style.display = 'flex'; return; }
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) await onAuthed(session.user.id);
+    else document.getElementById('auth-gate').style.display = 'flex';
+  } catch (e) {
+    console.error(e);
+    document.getElementById('auth-gate').style.display = 'flex';
+  }
+}
+
+/* ---------------- storage & data model ---------------- */
+const LS_KEY = 'todo-app-data-v1';
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+function defaultData() {
+  return { todoLists: [{ id: uid(), name: '할 일', icon: '📋', type: 'simple', hideCompleted: false }], todos: [] };
+}
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return defaultData();
+    const d = JSON.parse(raw);
+    if (!d || !Array.isArray(d.todoLists)) return defaultData();
+    d.todoLists = d.todoLists.length ? d.todoLists : defaultData().todoLists;
+    d.todos = Array.isArray(d.todos) ? d.todos : [];
+    return d;
+  } catch (e) { console.error(e); return defaultData(); }
+}
+function saveData() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(DATA)); }
+  catch (e) { showToast('저장에 실패했어요. 브라우저 저장공간을 확인해주세요.', 'error'); }
+  scheduleCloudSave();
+}
+
+let DATA = loadData();
+saveData();
+let state = { todoListId: null };
+
+/* ---------------- date helpers ---------------- */
+function pad2(n) { return String(n).padStart(2, '0'); }
+function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+function shiftMonth(mKey, delta) {
+  const [y, m] = mKey.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return monthKey(d);
+}
+function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function todayStr() { return ymd(new Date()); }
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------------- toast ---------------- */
+function showToast(message, type = 'info', duration = 3800) {
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = message;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .25s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 250); }, duration);
+}
+
+/* ---------------- modal ---------------- */
+function openModal(innerHtml, opts) {
+  const sidePanel = !opts || opts.sidePanel !== false;
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="modal-overlay${sidePanel ? ' side-panel' : ''}" id="modal-overlay"><div class="modal-card">${innerHtml}</div></div>`;
+  const overlay = document.getElementById('modal-overlay');
+  overlay.addEventListener('mousedown', (e) => { if (e.target.id === 'modal-overlay') closeModal(); });
+  overlay.addEventListener('keydown', trapModalTab);
+}
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+function getModalFocusable() {
+  const card = document.querySelector('#modal-overlay .modal-card');
+  if (!card) return [];
+  return Array.from(card.querySelectorAll('input, select, textarea, button, a[href], [tabindex]'))
+    .filter(el => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null);
+}
+function trapModalTab(e) {
+  if (e.key !== 'Tab') return;
+  const focusable = getModalFocusable();
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+/* ---------------- custom date picker (single-tap select, no OS confirm step) ---------------- */
+let dpState = null;
+function openDatePicker(input) {
+  if (dpState && dpState.input === input) { closeDatePicker(); return; }
+  closeDatePicker();
+  const pop = document.createElement('div');
+  pop.className = 'dp-pop';
+  document.body.appendChild(pop);
+  dpState = { input, mKey: (input.value || todayStr()).slice(0, 7), pop };
+  renderDatePicker();
+  positionDatePicker();
+  setTimeout(() => document.addEventListener('mousedown', onDatePickerOutsideClick), 0);
+  window.addEventListener('resize', positionDatePicker);
+  window.addEventListener('scroll', closeDatePicker, true);
+}
+function positionDatePicker() {
+  if (!dpState) return;
+  const rect = dpState.input.getBoundingClientRect();
+  const top = Math.min(rect.bottom + 4, window.innerHeight - 300);
+  const left = Math.min(rect.left, window.innerWidth - 262);
+  dpState.pop.style.top = Math.max(8, top) + 'px';
+  dpState.pop.style.left = Math.max(8, left) + 'px';
+}
+function renderDatePicker() {
+  if (!dpState) return;
+  const { input, mKey, pop } = dpState;
+  const [y, m] = mKey.split('-').map(Number);
+  const cells = buildCalendarCells(mKey);
+  const dows = ['일', '월', '화', '수', '목', '금', '토'];
+  const today = todayStr();
+  pop.innerHTML = `
+    <div class="dp-head">
+      <button type="button" class="icon-btn" onclick="dpNav(-1)" aria-label="이전 달">&lt;</button>
+      <div class="dp-label">${y}년 ${m}월</div>
+      <button type="button" class="icon-btn" onclick="dpNav(1)" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="dp-grid">
+      ${dows.map(d => `<div class="dp-dow">${d}</div>`).join('')}
+      ${cells.map(cell => {
+        const { date, inMonth } = cell;
+        const d = Number(date.slice(-2));
+        const cls = ['dp-cell'];
+        if (!inMonth) cls.push('adjacent');
+        if (date === today) cls.push('today');
+        if (date === input.value) cls.push('sel');
+        return `<div class="${cls.join(' ')}" onclick="dpPick('${date}')">${d}</div>`;
+      }).join('')}
+    </div>
+    <div class="dp-foot"><button type="button" class="ghost-btn" style="font-size:12px;padding:5px 10px;" onclick="dpPick('${today}')">오늘</button></div>
+  `;
+}
+function dpNav(delta) {
+  if (!dpState) return;
+  dpState.mKey = shiftMonth(dpState.mKey, delta);
+  renderDatePicker();
+}
+function dpPick(date) {
+  if (!dpState) return;
+  const input = dpState.input;
+  input.value = date;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  closeDatePicker();
+}
+function onDatePickerOutsideClick(e) {
+  if (!dpState) return;
+  if (dpState.pop.contains(e.target) || e.target === dpState.input) return;
+  closeDatePicker();
+}
+function closeDatePicker() {
+  if (!dpState) return;
+  dpState.pop.remove();
+  document.removeEventListener('mousedown', onDatePickerOutsideClick);
+  window.removeEventListener('resize', positionDatePicker);
+  window.removeEventListener('scroll', closeDatePicker, true);
+  dpState = null;
+}
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('input.date-field[readonly]');
+  if (target) openDatePicker(target);
+});
+
+function buildCalendarCells(mKey) {
+  const [y, m] = mKey.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const startOffset = firstDay.getDay();
+  const total = daysInMonth(y, m);
+  const prevKey = shiftMonth(mKey, -1);
+  const [py, pm] = prevKey.split('-').map(Number);
+  const prevTotal = daysInMonth(py, pm);
+  const nextKey = shiftMonth(mKey, 1);
+  const cells = [];
+  for (let i = startOffset; i > 0; i--) {
+    cells.push({ date: `${prevKey}-${pad2(prevTotal - i + 1)}`, inMonth: false });
+  }
+  for (let d = 1; d <= total; d++) cells.push({ date: `${mKey}-${pad2(d)}`, inMonth: true });
+  let nextDay = 1;
+  while (cells.length % 7 !== 0) {
+    cells.push({ date: `${nextKey}-${pad2(nextDay)}`, inMonth: false });
+    nextDay++;
+  }
+  return cells;
+}
+
+/* ---------------- TODO ---------------- */
+const TODO_LIST_TYPE_LABEL = { simple: '일반', project: '프로젝트' };
+const TODO_LIST_ICONS = ['📋', '🏠', '🛒', '💼', '🎯', '📚', '🧹', '✈️', '🏋️', '🎉', '🛠️', '📝'];
+
+function ensureTodoListSelection() {
+  if (state.todoListId && !DATA.todoLists.some(l => l.id === state.todoListId)) state.todoListId = null;
+}
+function getTodoList(id) { return DATA.todoLists.find(l => l.id === id); }
+function todosInList(listId) { return DATA.todos.filter(t => t.listId === listId); }
+function topTodos(listId) { return DATA.todos.filter(t => t.listId === listId && !t.parentId); }
+function subTodos(parentId) { return DATA.todos.filter(t => t.parentId === parentId); }
+function todoListProgress(listId) {
+  const items = todosInList(listId);
+  if (!items.length) return 0;
+  const done = items.filter(t => t.done).length;
+  return Math.round(done / items.length * 100);
+}
+
+/* 반복 규칙(매일/매주/매월/매년/특정일) 계산 */
+function todoMatchesFreq(rec, d) {
+  if (rec.freq === 'daily') return true;
+  if (rec.freq === 'weekly') return d.getDay() === (rec.weekday != null ? rec.weekday : 1);
+  if (rec.freq === 'monthly') {
+    const dim = daysInMonth(d.getFullYear(), d.getMonth() + 1);
+    const day = rec.day === 'last' ? dim : Math.min(rec.day || 1, dim);
+    return d.getDate() === day;
+  }
+  if (rec.freq === 'yearly') {
+    const mo = rec.month || 1;
+    const dim = daysInMonth(d.getFullYear(), mo);
+    const day = rec.day === 'last' ? dim : Math.min(rec.day || 1, dim);
+    return (d.getMonth() + 1) === mo && d.getDate() === day;
+  }
+  return false;
+}
+function todoFirstOccurrenceFrom(rec, startDate) {
+  if (rec.freq === 'custom') {
+    const sorted = (rec.dates || []).slice().sort();
+    return sorted.find(d => d >= startDate) || sorted[sorted.length - 1] || null;
+  }
+  const d = new Date(startDate);
+  for (let i = 0; i < 800; i++) {
+    if (todoMatchesFreq(rec, d)) return ymd(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return null;
+}
+function todoNextOccurrenceAfter(rec, afterDate) {
+  if (rec.freq === 'custom') {
+    const sorted = (rec.dates || []).slice().sort();
+    return sorted.find(d => d > afterDate) || null;
+  }
+  const d = new Date(afterDate);
+  d.setDate(d.getDate() + 1);
+  for (let i = 0; i < 800; i++) {
+    if (todoMatchesFreq(rec, d)) return ymd(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return null;
+}
+function todoRecurrenceLabel(rec) {
+  if (!rec) return '';
+  if (rec.freq === 'daily') return '🔁 매일';
+  if (rec.freq === 'weekly') return `🔁 매주 ${['일', '월', '화', '수', '목', '금', '토'][rec.weekday != null ? rec.weekday : 1]}요일`;
+  if (rec.freq === 'monthly') return `🔁 매월 ${rec.day === 'last' ? '말일' : rec.day + '일'}`;
+  if (rec.freq === 'yearly') return `🔁 매년 ${rec.month}월 ${rec.day === 'last' ? '말일' : rec.day + '일'}`;
+  if (rec.freq === 'custom') return `🔁 지정일 ${(rec.dates || []).length}개`;
+  return '';
+}
+/* 반복 완료 연속 달성(스트릭) — recurrence.doneDates에 기록된 완료 이력을 거슬러 올라가며 세요. */
+function todoPrevOccurrenceBefore(rec, beforeDate) {
+  if (rec.freq === 'custom') {
+    const sorted = (rec.dates || []).slice().sort();
+    for (let i = sorted.length - 1; i >= 0; i--) if (sorted[i] < beforeDate) return sorted[i];
+    return null;
+  }
+  const d = new Date(beforeDate);
+  d.setDate(d.getDate() - 1);
+  for (let i = 0; i < 800; i++) {
+    if (todoMatchesFreq(rec, d)) return ymd(d);
+    d.setDate(d.getDate() - 1);
+  }
+  return null;
+}
+function todoStreak(t) {
+  if (!t.recurrence) return 0;
+  const doneSet = new Set(t.recurrence.doneDates || []);
+  if (!doneSet.size) return 0;
+  let streak = 0;
+  let cursor = t.dueDate || todayStr();
+  for (let i = 0; i < 1000; i++) {
+    const prev = todoPrevOccurrenceBefore(t.recurrence, cursor);
+    if (!prev || !doneSet.has(prev)) break;
+    streak++;
+    cursor = prev;
+  }
+  return streak;
+}
+
+/* ---------------- 빠른 입력 자연어 날짜/반복 인식 (Todoist/TickTick 참고) ---------------- */
+const TODO_WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+function todoNextWeekdayDate(from, targetWd, forceNextWeek) {
+  const d = new Date(from);
+  let diff = (targetWd - d.getDay() + 7) % 7;
+  if (forceNextWeek) diff += 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+function parseNaturalLanguageDate(raw) {
+  let text = ' ' + raw.trim() + ' ';
+  let recurrence = null;
+  let dueDate = null;
+  let m;
+  if ((m = text.match(/\s매일\s/))) {
+    recurrence = { freq: 'daily' };
+    text = text.replace(m[0], ' ');
+  } else if ((m = text.match(/\s매주\s*(일|월|화|수|목|금|토)?요?일?\s/))) {
+    const wd = m[1] ? TODO_WEEKDAY_NAMES.indexOf(m[1]) : new Date().getDay();
+    recurrence = { freq: 'weekly', weekday: wd };
+    text = text.replace(m[0], ' ');
+  } else if ((m = text.match(/\s매(?:월|달)\s*(\d{1,2})?일?\s/))) {
+    const day = m[1] ? Number(m[1]) : new Date().getDate();
+    recurrence = { freq: 'monthly', day };
+    text = text.replace(m[0], ' ');
+  } else if ((m = text.match(/\s매년\s*(\d{1,2})월\s*(\d{1,2})일\s/))) {
+    recurrence = { freq: 'yearly', month: Number(m[1]), day: Number(m[2]) };
+    text = text.replace(m[0], ' ');
+  }
+
+  if (!recurrence) {
+    const today = new Date();
+    if ((m = text.match(/\s오늘\s/))) {
+      dueDate = todayStr();
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s내일\s/))) {
+      const d = new Date(today); d.setDate(d.getDate() + 1);
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s모레\s/))) {
+      const d = new Date(today); d.setDate(d.getDate() + 2);
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s(\d{1,2})일\s*(?:후|뒤)\s/))) {
+      const d = new Date(today); d.setDate(d.getDate() + Number(m[1]));
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s(다음주|이번주)\s*(일|월|화|수|목|금|토)요일\s/))) {
+      const d = todoNextWeekdayDate(today, TODO_WEEKDAY_NAMES.indexOf(m[2]), m[1] === '다음주');
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s(일|월|화|수|목|금|토)요일\s/))) {
+      const d = todoNextWeekdayDate(today, TODO_WEEKDAY_NAMES.indexOf(m[1]), false);
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s(\d{1,2})월\s*(\d{1,2})일\s/))) {
+      const mo = Number(m[1]), da = Number(m[2]);
+      let y = today.getFullYear();
+      let d = new Date(y, mo - 1, da);
+      if (ymd(d) < todayStr()) d = new Date(y + 1, mo - 1, da);
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    } else if ((m = text.match(/\s(\d{1,2})\/(\d{1,2})\s/))) {
+      const mo = Number(m[1]), da = Number(m[2]);
+      let y = today.getFullYear();
+      let d = new Date(y, mo - 1, da);
+      if (ymd(d) < todayStr()) d = new Date(y + 1, mo - 1, da);
+      dueDate = ymd(d);
+      text = text.replace(m[0], ' ');
+    }
+  }
+
+  return { title: text.replace(/\s+/g, ' ').trim(), dueDate, recurrence };
+}
+
+function renderTodos() {
+  ensureTodoListSelection();
+  const view = state.todoView || 'lists';
+  const nav = `<div class="seg todo-view-nav">
+    <button type="button" class="${view === 'today' ? 'active' : ''}" onclick="setTodoView('today')">☀️ 오늘</button>
+    <button type="button" class="${view === 'lists' ? 'active' : ''}" onclick="setTodoView('lists')">📋 목록</button>
+    <button type="button" class="${view === 'calendar' ? 'active' : ''}" onclick="setTodoView('calendar')">📅 캘린더</button>
+  </div>`;
+  let bodyHtml;
+  if (view === 'today') bodyHtml = renderTodayView();
+  else if (view === 'calendar') bodyHtml = renderCalendarView();
+  else bodyHtml = renderTodoListsView();
+  document.getElementById('todo-root').innerHTML = nav + bodyHtml;
+}
+function setTodoView(v) { state.todoView = v; renderTodos(); }
+function renderTodoListsView() {
+  const lists = DATA.todoLists;
+  const selected = getTodoList(state.todoListId);
+  const listRow = (l) => {
+    const items = todosInList(l.id);
+    const doneCount = items.filter(t => t.done).length;
+    return `<div class="acct-list-row ${selected && selected.id === l.id ? 'selected' : ''}" onclick="selectTodoList('${l.id}')">
+      <span>${l.icon || '📋'} ${escapeHtml(l.name)} <span class="form-note" style="margin:0;">${items.length}</span></span>
+      ${l.type === 'project' ? `<span class="todo-pct-badge">${todoListProgress(l.id)}%</span>` : `<span class="form-note" style="margin:0;">${doneCount}/${items.length}</span>`}
+    </div>`;
+  };
+  return `
+    <div class="acct-master-detail">
+      <div class="acct-list-pane ${selected ? 'has-selection' : ''}">
+        <div class="acct-list-group">
+          <div class="acct-list-group-head"><span>목록</span><button class="icon-btn" onclick="openTodoListModal()" title="목록 추가" aria-label="목록 추가">+</button></div>
+          ${lists.map(listRow).join('')}
+        </div>
+      </div>
+      <div class="acct-detail-pane ${selected ? 'active' : ''}">
+        ${selected ? renderTodoListDetail(selected) : `<div class="empty">왼쪽에서 목록을 선택해주세요.</div>`}
+      </div>
+    </div>
+  `;
+}
+/* "오늘" 보기 — 모든 리스트를 가로질러 오늘 마감·지난 할 일을 한 화면에 모아요. */
+function renderTodayView() {
+  const hide = !!state.todayHideCompleted;
+  const today = todayStr();
+  const items = DATA.todos
+    .filter(t => t.dueDate && t.dueDate <= today && (!hide || !t.done))
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const rowsHtml = items.length
+    ? `<div class="todo-list-body">${items.map(t => crossListTodoRowHtml(t)).join('')}</div>`
+    : `<div class="empty">오늘 예정된 할 일이 없어요.</div>`;
+  return `
+    <div class="acct-detail-head">
+      <div class="acct-detail-title">☀️ 오늘 할 일 <span class="form-note" style="margin:0;">${today}</span></div>
+      <div class="btn-group">
+        <button class="ghost-btn" onclick="toggleTodayHideCompleted()">완료 항목 ${hide ? '보이기' : '숨기기'}</button>
+      </div>
+    </div>
+    ${rowsHtml}
+  `;
+}
+function toggleTodayHideCompleted() {
+  state.todayHideCompleted = !state.todayHideCompleted;
+  renderTodos();
+}
+/* "캘린더" 보기 — 리스트 구분 없이 날짜별 할 일 개수를 달력으로 보고, 날짜를 클릭하면 그날 할 일을 모아봐요. */
+function renderCalendarView() {
+  state.todoCalMonth = state.todoCalMonth || monthKey(new Date());
+  state.todoCalSelected = state.todoCalSelected || todayStr();
+  const mKey = state.todoCalMonth;
+  const [y, m] = mKey.split('-').map(Number);
+  const cells = buildCalendarCells(mKey);
+  const dows = ['일', '월', '화', '수', '목', '금', '토'];
+  const today = todayStr();
+  const countByDate = {};
+  DATA.todos.forEach(t => { if (t.dueDate) countByDate[t.dueDate] = (countByDate[t.dueDate] || 0) + 1; });
+  const calHtml = `
+    <div class="month-nav">
+      <button class="icon-btn" onclick="todoCalNav(-1)" aria-label="이전 달">&lt;</button>
+      <div class="m-label">${y}년 ${m}월</div>
+      <button class="icon-btn" onclick="todoCalNav(1)" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="cal-grid">
+      ${dows.map(d => `<div class="cal-dow">${d}</div>`).join('')}
+      ${cells.map(cell => {
+        const { date, inMonth } = cell;
+        const d = Number(date.slice(-2));
+        const cls = ['cal-cell'];
+        if (!inMonth) cls.push('adjacent');
+        if (date === today) cls.push('today');
+        if (date === state.todoCalSelected) cls.push('selected');
+        const cnt = countByDate[date] || 0;
+        return `<div class="${cls.join(' ')}" onclick="selectTodoCalDate('${date}')">
+          <div class="date-num">${d}</div>
+          ${cnt ? `<div class="cal-amt">${cnt}개</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+  const dayItems = DATA.todos.filter(t => t.dueDate === state.todoCalSelected);
+  const dayHtml = dayItems.length
+    ? `<div class="todo-list-body">${dayItems.map(t => crossListTodoRowHtml(t)).join('')}</div>`
+    : `<div class="empty">이 날짜에 예정된 할 일이 없어요.</div>`;
+  return `${calHtml}<div class="acct-detail-title" style="margin-bottom:10px;">${state.todoCalSelected}</div>${dayHtml}`;
+}
+function todoCalNav(delta) {
+  state.todoCalMonth = shiftMonth(state.todoCalMonth, delta);
+  renderTodos();
+}
+function selectTodoCalDate(date) {
+  state.todoCalSelected = date;
+  renderTodos();
+}
+/* "오늘"/"캘린더" 보기에서 쓰는 리스트-교차 행 — 어느 리스트 소속인지 배지로 보여줘요. */
+function crossListTodoRowHtml(t) {
+  const list = getTodoList(t.listId);
+  const overdue = t.dueDate < todayStr() && !t.done;
+  const metaParts = [];
+  if (list) metaParts.push(`<span>${list.icon || '📋'} ${escapeHtml(list.name)}</span>`);
+  metaParts.push(`<span class="due ${overdue ? 'overdue' : ''}">${t.dueDate}${overdue ? ' (지남)' : ''}</span>`);
+  if (t.recurrence) {
+    metaParts.push(`<span class="rec-badge">${todoRecurrenceLabel(t.recurrence)}</span>`);
+    const streak = todoStreak(t);
+    if (streak > 0) metaParts.push(`<span class="streak-badge">🔥 ${streak}회 연속</span>`);
+  }
+  return `
+    <div class="todo-row ${t.done ? 'done' : ''}" data-todoid="${t.id}">
+      <input type="checkbox" class="todo-check" ${t.done ? 'checked' : ''} onchange="toggleTodoDone('${t.id}')" aria-label="완료 표시">
+      <div class="todo-main">
+        <div class="todo-title">${escapeHtml(t.title)}</div>
+        <div class="todo-meta">${metaParts.join('')}</div>
+      </div>
+      <div class="todo-actions">
+        <button class="icon-btn" onclick="openTodoModal('${t.id}')" title="수정" aria-label="수정">✏️</button>
+      </div>
+    </div>
+  `;
+}
+function selectTodoList(id) {
+  state.todoListId = id;
+  renderTodos();
+}
+function backToTodoLists() {
+  state.todoListId = null;
+  renderTodos();
+}
+function renderTodoListDetail(list) {
+  const allTop = topTodos(list.id);
+  const hideCompleted = !!list.hideCompleted;
+  const items = allTop.filter(t => !hideCompleted || !t.done);
+  const pct = todoListProgress(list.id);
+  const rowsHtml = !allTop.length
+    ? `<div class="empty">등록된 할 일이 없어요.</div>`
+    : items.length
+      ? `<div class="todo-list-body" id="todo-body">${items.map(t => todoRowHtml(t, list)).join('')}</div>`
+      : `<div class="todo-empty-list">완료 항목을 숨기는 중이에요. (완료 ${allTop.filter(t => t.done).length}건)</div>`;
+  return `
+    <div class="acct-detail-head">
+      <div class="acct-detail-title">${list.icon || '📋'} ${escapeHtml(list.name)} <span class="form-note" style="margin:0;">${TODO_LIST_TYPE_LABEL[list.type]}</span></div>
+      <div class="btn-group">
+        <button class="ghost-btn" style="font-size:12px;padding:5px 10px;" onclick="backToTodoLists()">← 목록으로</button>
+        <button class="ghost-btn" onclick="openTodoListModal('${list.id}')">목록 수정</button>
+        <button class="ghost-btn danger-btn" onclick="deleteTodoList('${list.id}')">목록 삭제</button>
+      </div>
+    </div>
+    ${list.type === 'project' ? `
+      <div class="budget-item" style="padding:0 0 16px;border-bottom:none;">
+        <div class="budget-head"><span>진행률</span><span class="budget-pct-tag ${pct >= 100 ? 'ok' : 'warn'}">${pct}%</span></div>
+        <div class="budget-track"><div class="budget-fill ${pct >= 100 ? 'ok' : 'warn'}" style="width:${pct}%;"></div></div>
+      </div>` : ''}
+    <div class="toolbar">
+      <div class="search-wrap" style="max-width:320px;display:flex;gap:6px;">
+        <input class="search-input" id="todo-quick-add" placeholder="할 일 입력 후 Enter" onkeydown="onTodoQuickAddKeydown(event,'${list.id}')" style="flex:1;min-width:0;">
+      </div>
+      <div class="btn-group">
+        <button class="ghost-btn" onclick="toggleTodoHideCompleted('${list.id}')">완료 항목 ${hideCompleted ? '보이기' : '숨기기'}</button>
+        <button class="primary-btn" onclick="openTodoModal(null,'${list.id}')">+ 할 일 추가</button>
+      </div>
+    </div>
+    ${rowsHtml}
+  `;
+}
+function todoRowHtml(t, list) {
+  /* 하위 체크리스트는 리스트 형식과 무관하게 모든 할 일에 붙일 수 있어요. */
+  const subs = !t.parentId ? subTodos(t.id) : [];
+  const visibleSubs = subs.filter(s => !list.hideCompleted || !s.done);
+  const overdue = t.dueDate && !t.done && t.dueDate < todayStr();
+  const metaParts = [];
+  if (t.dueDate) metaParts.push(`<span class="due ${overdue ? 'overdue' : ''}">${t.dueDate}${overdue ? ' (지남)' : ''}</span>`);
+  if (t.recurrence) {
+    metaParts.push(`<span class="rec-badge">${todoRecurrenceLabel(t.recurrence)}</span>`);
+    const streak = todoStreak(t);
+    if (streak > 0) metaParts.push(`<span class="streak-badge">🔥 ${streak}회 연속</span>`);
+  }
+  if (subs.length) metaParts.push(`<span>하위 ${subs.filter(s => s.done).length}/${subs.length} 완료</span>`);
+  return `
+    <div class="todo-row ${t.done ? 'done' : ''}" data-todoid="${t.id}">
+      <span class="todo-drag-handle" onpointerdown="startTodoDrag(event,'${t.id}')" title="순서 변경" aria-label="순서 변경">⠿</span>
+      <input type="checkbox" class="todo-check" ${t.done ? 'checked' : ''} onchange="toggleTodoDone('${t.id}')" aria-label="완료 표시">
+      <div class="todo-main">
+        <div class="todo-title">${escapeHtml(t.title)}</div>
+        ${t.memo ? `<div class="form-note" style="margin:2px 0 0;">${escapeHtml(t.memo)}</div>` : ''}
+        ${metaParts.length ? `<div class="todo-meta">${metaParts.join('')}</div>` : ''}
+      </div>
+      <div class="todo-actions">
+        ${!t.parentId ? `<button class="icon-btn" onclick="openTodoModal(null,'${list.id}','${t.id}')" title="하위 할일 추가" aria-label="하위 할일 추가">+</button>` : ''}
+        <button class="icon-btn" onclick="openTodoModal('${t.id}')" title="수정" aria-label="수정">✏️</button>
+        <button class="icon-btn danger" onclick="deleteTodo('${t.id}')" title="삭제" aria-label="삭제">🗑</button>
+      </div>
+    </div>
+    ${visibleSubs.length ? `<div class="todo-sub-list">${visibleSubs.map(s => todoRowHtml(s, list)).join('')}</div>` : ''}
+  `;
+}
+/* 빠른 입력에서 "내일", "매주 월요일" 같은 자연어를 날짜/반복으로 자동 인식해요. */
+function onTodoQuickAddKeydown(e, listId) {
+  if (e.key !== 'Enter') return;
+  const raw = e.target.value.trim();
+  if (!raw) return;
+  const parsed = parseNaturalLanguageDate(raw);
+  const title = parsed.title || raw;
+  let dueDate = parsed.dueDate;
+  if (parsed.recurrence) dueDate = todoFirstOccurrenceFrom(parsed.recurrence, todayStr());
+  DATA.todos.push({ id: uid(), listId, parentId: null, title, memo: '', dueDate, recurrence: parsed.recurrence, done: false, doneAt: null, createdAt: new Date().toISOString() });
+  saveData();
+  e.target.value = '';
+  renderTodos();
+  if (parsed.dueDate || parsed.recurrence) {
+    showToast(`날짜를 자동으로 인식했어요: ${parsed.recurrence ? todoRecurrenceLabel(parsed.recurrence) : dueDate}`, 'info', 2600);
+  }
+}
+function toggleTodoDone(id) {
+  const t = DATA.todos.find(x => x.id === id);
+  if (!t) return;
+  if (!t.done) {
+    if (t.recurrence) {
+      t.recurrence.doneDates = t.recurrence.doneDates || [];
+      if (t.dueDate) t.recurrence.doneDates.push(t.dueDate);
+      const next = todoNextOccurrenceAfter(t.recurrence, t.dueDate || todayStr());
+      if (next) { t.dueDate = next; t.done = false; }
+      else { t.done = true; t.doneAt = new Date().toISOString(); }
+    } else {
+      t.done = true; t.doneAt = new Date().toISOString();
+    }
+  } else {
+    t.done = false; t.doneAt = null;
+  }
+  saveData();
+  renderTodos();
+}
+function deleteTodo(id) {
+  if (!confirm('이 할 일을 삭제할까요?')) return;
+  const idsToDelete = new Set([id, ...subTodos(id).map(s => s.id)]);
+  DATA.todos = DATA.todos.filter(t => !idsToDelete.has(t.id));
+  saveData();
+  renderTodos();
+}
+function toggleTodoHideCompleted(listId) {
+  const list = getTodoList(listId);
+  if (!list) return;
+  list.hideCompleted = !list.hideCompleted;
+  saveData();
+  renderTodos();
+}
+
+/* ---------------- todo list modal ---------------- */
+function openTodoListModal(id) {
+  const editing = id ? getTodoList(id) : null;
+  const icon = editing ? (editing.icon || TODO_LIST_ICONS[0]) : TODO_LIST_ICONS[0];
+  const formHtml = `
+    <h3>${editing ? '목록 수정' : '목록 추가'}</h3>
+    <div class="field"><label class="field-lbl">이름</label><input type="text" id="todo-list-name" value="${escapeHtml(editing ? editing.name : '')}" placeholder="예: 집안일, 이사 프로젝트"></div>
+    <div class="field">
+      <label class="field-lbl">아이콘</label>
+      <div class="emoji-pick" id="todo-list-emoji-pick">
+        ${TODO_LIST_ICONS.map(e => `<button type="button" class="${icon === e ? 'active' : ''}" onclick="pickTodoListEmoji('${e}', this)">${e}</button>`).join('')}
+      </div>
+      <input type="hidden" id="todo-list-icon" value="${icon}">
+    </div>
+    <div class="field">
+      <label class="field-lbl">형식</label>
+      <div class="seg" id="todo-list-type-seg">
+        <button type="button" data-v="simple" class="${(!editing || editing.type === 'simple') ? 'active' : ''}" onclick="setTodoListType('simple')">일반 리스트</button>
+        <button type="button" data-v="project" class="${editing && editing.type === 'project' ? 'active' : ''}" onclick="setTodoListType('project')">프로젝트 (진행률 %, 하위 할일)</button>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="ghost-btn" onclick="closeModal()">취소</button>
+      <button class="primary-btn" onclick="submitTodoList(${editing ? `'${editing.id}'` : 'null'})">${editing ? '저장' : '추가'}</button>
+    </div>
+  `;
+  openModal(formHtml, { sidePanel: true });
+}
+function pickTodoListEmoji(e, btn) {
+  document.getElementById('todo-list-icon').value = e;
+  document.querySelectorAll('#todo-list-emoji-pick button').forEach(b => b.classList.toggle('active', b === btn));
+}
+function setTodoListType(t) {
+  document.querySelectorAll('#todo-list-type-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === t));
+}
+function submitTodoList(id) {
+  const name = document.getElementById('todo-list-name').value.trim();
+  if (!name) return showToast('이름을 입력해주세요.', 'error');
+  const icon = document.getElementById('todo-list-icon').value || '📋';
+  const type = document.querySelector('#todo-list-type-seg button.active').dataset.v;
+  if (id) {
+    const list = getTodoList(id);
+    list.name = name; list.icon = icon; list.type = type;
+  } else {
+    const list = { id: uid(), name, icon, type, hideCompleted: false };
+    DATA.todoLists.push(list);
+    state.todoListId = list.id;
+  }
+  saveData();
+  closeModal();
+  renderTodos();
+}
+function deleteTodoList(id) {
+  if (DATA.todoLists.length <= 1) return showToast('최소 1개의 목록은 있어야 해요.', 'error');
+  if (!confirm('이 목록과 목록 안의 모든 할 일을 삭제할까요?')) return;
+  DATA.todoLists = DATA.todoLists.filter(l => l.id !== id);
+  DATA.todos = DATA.todos.filter(t => t.listId !== id);
+  if (state.todoListId === id) state.todoListId = null;
+  saveData();
+  renderTodos();
+}
+
+/* ---------------- todo item modal ---------------- */
+function openTodoModal(id, listId, parentId) {
+  const editing = id ? DATA.todos.find(t => t.id === id) : null;
+  const effListId = editing ? editing.listId : listId;
+  const effParentId = editing ? editing.parentId : (parentId || null);
+  const rec = editing ? editing.recurrence : null;
+  state._todoModal = { listId: effListId, parentId: effParentId, freq: rec ? rec.freq : 'none', customDates: rec && rec.freq === 'custom' ? (rec.dates || []).slice() : [], calMonth: monthKey(new Date()) };
+  const isSub = !!effParentId;
+  const formHtml = `
+    <h3>${editing ? '할 일 수정' : (isSub ? '하위 할 일 추가' : '할 일 추가')}</h3>
+    ${isSub ? `<div class="form-note">상위 할 일: ${escapeHtml((DATA.todos.find(t => t.id === effParentId) || {}).title || '')}</div>` : ''}
+    <div class="field">
+      <label class="field-lbl">할 일</label>
+      <input type="text" id="todo-title" oninput="onTodoTitleInput()" value="${escapeHtml(editing ? editing.title : '')}" placeholder="무엇을 해야 하나요? (예: 내일 우유 사기, 매주 월요일 청소)">
+      <div class="todo-title-hint" id="todo-title-hint"></div>
+    </div>
+    <div class="field"><label class="field-lbl">메모</label><textarea id="todo-memo" placeholder="선택 사항">${escapeHtml(editing ? (editing.memo || '') : '')}</textarea></div>
+    <div class="field"><label class="field-lbl">날짜</label><input type="text" class="date-field" id="todo-due" value="${editing ? (editing.dueDate || '') : ''}" placeholder="날짜 선택 (선택 사항)" readonly></div>
+    ${!isSub ? `
+    <div class="field">
+      <label class="field-lbl">반복</label>
+      <div class="seg" id="todo-freq-seg">
+        <button type="button" data-v="none" class="${!rec ? 'active' : ''}" onclick="setTodoFreq('none')">안 함</button>
+        <button type="button" data-v="daily" class="${rec && rec.freq === 'daily' ? 'active' : ''}" onclick="setTodoFreq('daily')">매일</button>
+        <button type="button" data-v="weekly" class="${rec && rec.freq === 'weekly' ? 'active' : ''}" onclick="setTodoFreq('weekly')">매주</button>
+        <button type="button" data-v="monthly" class="${rec && rec.freq === 'monthly' ? 'active' : ''}" onclick="setTodoFreq('monthly')">매월</button>
+        <button type="button" data-v="yearly" class="${rec && rec.freq === 'yearly' ? 'active' : ''}" onclick="setTodoFreq('yearly')">매년</button>
+        <button type="button" data-v="custom" class="${rec && rec.freq === 'custom' ? 'active' : ''}" onclick="setTodoFreq('custom')">특정일 지정</button>
+      </div>
+      <div id="todo-freq-detail" style="margin-top:8px;"></div>
+    </div>` : ''}
+    <div class="form-actions">
+      <button class="ghost-btn" onclick="closeModal()">취소</button>
+      <button class="primary-btn" onclick="submitTodo(${editing ? `'${editing.id}'` : 'null'})">${editing ? '저장' : '추가'}</button>
+    </div>
+  `;
+  openModal(formHtml, { sidePanel: true });
+  if (!isSub) renderTodoFreqDetail(state._todoModal.freq, rec);
+}
+function setTodoFreq(f) {
+  state._todoModal.freq = f;
+  document.querySelectorAll('#todo-freq-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === f));
+  renderTodoFreqDetail(f);
+}
+function renderTodoFreqDetail(freq, rec) {
+  const el = document.getElementById('todo-freq-detail');
+  if (!el) return;
+  if (freq === 'none' || freq === 'daily') { el.innerHTML = ''; return; }
+  if (freq === 'weekly') {
+    const wLabels = ['일', '월', '화', '수', '목', '금', '토'];
+    const wd = rec && rec.freq === 'weekly' && rec.weekday != null ? rec.weekday : 1;
+    el.innerHTML = `<select id="todo-weekday">${wLabels.map((w, i) => `<option value="${i}" ${wd === i ? 'selected' : ''}>${w}요일</option>`).join('')}</select>`;
+  } else if (freq === 'monthly') {
+    const dayVal = rec && rec.freq === 'monthly' ? (rec.day || 1) : 1;
+    const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1).map(i => `<option value="${i}" ${dayVal === i ? 'selected' : ''}>${i}일</option>`).join('') + `<option value="last" ${dayVal === 'last' ? 'selected' : ''}>말일</option>`;
+    el.innerHTML = `<select id="todo-day">${dayOptions}</select>`;
+  } else if (freq === 'yearly') {
+    const monthVal = rec && rec.freq === 'yearly' ? (rec.month || 1) : 1;
+    const dayVal = rec && rec.freq === 'yearly' ? (rec.day || 1) : 1;
+    const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1).map(i => `<option value="${i}" ${monthVal === i ? 'selected' : ''}>${i}월</option>`).join('');
+    const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1).map(i => `<option value="${i}" ${dayVal === i ? 'selected' : ''}>${i}일</option>`).join('') + `<option value="last" ${dayVal === 'last' ? 'selected' : ''}>말일</option>`;
+    el.innerHTML = `<div style="display:flex;gap:8px;"><select id="todo-month" style="flex:1;">${monthOptions}</select><select id="todo-day" style="flex:1;">${dayOptions}</select></div>`;
+  } else if (freq === 'custom') {
+    el.innerHTML = `<div class="form-note" style="margin-bottom:6px;">달력에서 반복될 날짜를 여러 개 선택해주세요.</div><div id="todo-mdp"></div><div id="todo-date-chips" style="margin-top:8px;"></div>`;
+    renderTodoMiniCalendar();
+    renderTodoDateChips();
+  }
+}
+function renderTodoMiniCalendar() {
+  const el = document.getElementById('todo-mdp');
+  if (!el) return;
+  const mKey = state._todoModal.calMonth;
+  const [y, m] = mKey.split('-').map(Number);
+  const cells = buildCalendarCells(mKey);
+  const dows = ['일', '월', '화', '수', '목', '금', '토'];
+  const today = todayStr();
+  const selectedSet = new Set(state._todoModal.customDates);
+  el.innerHTML = `
+    <div class="dp-head">
+      <button type="button" class="icon-btn" onclick="todoMdpNav(-1)" aria-label="이전 달">&lt;</button>
+      <div class="dp-label" style="cursor:default;">${y}년 ${m}월</div>
+      <button type="button" class="icon-btn" onclick="todoMdpNav(1)" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="dp-grid">
+      ${dows.map(d => `<div class="dp-dow">${d}</div>`).join('')}
+      ${cells.map(cell => {
+        const { date, inMonth } = cell;
+        const d = Number(date.slice(-2));
+        const cls = ['dp-cell'];
+        if (!inMonth) cls.push('adjacent');
+        if (date === today) cls.push('today');
+        if (selectedSet.has(date)) cls.push('sel');
+        return `<div class="${cls.join(' ')}" onclick="toggleTodoCustomDate('${date}')">${d}</div>`;
+      }).join('')}
+    </div>
+  `;
+}
+function todoMdpNav(delta) {
+  state._todoModal.calMonth = shiftMonth(state._todoModal.calMonth, delta);
+  renderTodoMiniCalendar();
+}
+function toggleTodoCustomDate(date) {
+  const arr = state._todoModal.customDates;
+  const idx = arr.indexOf(date);
+  if (idx === -1) arr.push(date); else arr.splice(idx, 1);
+  renderTodoMiniCalendar();
+  renderTodoDateChips();
+}
+function renderTodoDateChips() {
+  const el = document.getElementById('todo-date-chips');
+  if (!el) return;
+  const dates = state._todoModal.customDates.slice().sort();
+  el.innerHTML = dates.length
+    ? dates.map(d => `<span class="todo-date-chip">${d}<button type="button" onclick="toggleTodoCustomDate('${d}')" aria-label="제거">✕</button></span>`).join('')
+    : `<span class="form-note">선택된 날짜가 없어요.</span>`;
+}
+/* 제목 입력창에 "내일", "매주 월요일" 같은 문구가 보이면 감지해서 적용할지 물어봐요. */
+function onTodoTitleInput() {
+  const input = document.getElementById('todo-title');
+  const hint = document.getElementById('todo-title-hint');
+  if (!input || !hint) return;
+  const isSub = !!(state._todoModal && state._todoModal.parentId);
+  const parsed = parseNaturalLanguageDate(input.value);
+  if (isSub && parsed.recurrence) { hint.style.display = 'none'; return; }
+  if (parsed.dueDate || parsed.recurrence) {
+    const label = parsed.recurrence ? todoRecurrenceLabel(parsed.recurrence) : `📅 ${parsed.dueDate}`;
+    hint.style.display = 'block';
+    hint.innerHTML = `${label} 감지됨 · <span class="usage-link" onclick="applyParsedTitleDate()">적용하고 문구 지우기</span>`;
+  } else {
+    hint.style.display = 'none';
+  }
+}
+function applyParsedTitleDate() {
+  const input = document.getElementById('todo-title');
+  const isSub = !!(state._todoModal && state._todoModal.parentId);
+  const parsed = parseNaturalLanguageDate(input.value);
+  input.value = parsed.title;
+  if (parsed.recurrence && !isSub) {
+    setTodoFreq(parsed.recurrence.freq);
+    if (parsed.recurrence.freq === 'weekly') document.getElementById('todo-weekday').value = String(parsed.recurrence.weekday);
+    else if (parsed.recurrence.freq === 'monthly') document.getElementById('todo-day').value = String(parsed.recurrence.day);
+    else if (parsed.recurrence.freq === 'yearly') {
+      document.getElementById('todo-month').value = String(parsed.recurrence.month);
+      document.getElementById('todo-day').value = String(parsed.recurrence.day);
+    }
+  } else if (parsed.dueDate) {
+    document.getElementById('todo-due').value = parsed.dueDate;
+  }
+  document.getElementById('todo-title-hint').style.display = 'none';
+}
+function submitTodo(id) {
+  const title = document.getElementById('todo-title').value.trim();
+  if (!title) return showToast('할 일을 입력해주세요.', 'error');
+  const memo = document.getElementById('todo-memo').value.trim();
+  const dueInput = document.getElementById('todo-due').value || null;
+  const ctx = state._todoModal;
+  let recurrence = null;
+  if (!ctx.parentId && ctx.freq !== 'none') {
+    if (ctx.freq === 'daily') recurrence = { freq: 'daily' };
+    else if (ctx.freq === 'weekly') recurrence = { freq: 'weekly', weekday: Number(document.getElementById('todo-weekday').value) };
+    else if (ctx.freq === 'monthly') { const v = document.getElementById('todo-day').value; recurrence = { freq: 'monthly', day: v === 'last' ? 'last' : Number(v) }; }
+    else if (ctx.freq === 'yearly') { const v = document.getElementById('todo-day').value; recurrence = { freq: 'yearly', month: Number(document.getElementById('todo-month').value), day: v === 'last' ? 'last' : Number(v) }; }
+    else if (ctx.freq === 'custom') {
+      if (!ctx.customDates.length) return showToast('반복할 날짜를 최소 1개 선택해주세요.', 'error');
+      recurrence = { freq: 'custom', dates: ctx.customDates.slice().sort() };
+    }
+  }
+  let dueDate = dueInput;
+  if (recurrence) dueDate = todoFirstOccurrenceFrom(recurrence, dueInput || todayStr());
+  if (id) {
+    const t = DATA.todos.find(x => x.id === id);
+    if (recurrence && t.recurrence && t.recurrence.doneDates) recurrence.doneDates = t.recurrence.doneDates;
+    t.title = title; t.memo = memo; t.dueDate = dueDate; t.recurrence = recurrence;
+  } else {
+    DATA.todos.push({ id: uid(), listId: ctx.listId, parentId: ctx.parentId, title, memo, dueDate, recurrence, done: false, doneAt: null, createdAt: new Date().toISOString() });
+  }
+  saveData();
+  closeModal();
+  renderTodos();
+}
+
+/* ---------------- todo drag reorder (터치/마우스 공용) ---------------- */
+let todoDrag = null;
+function startTodoDrag(ev, id) {
+  ev.preventDefault();
+  if (todoDrag) return;
+  const row = ev.currentTarget.closest('.todo-row');
+  if (!row) return;
+  const list = row.parentElement;
+  const rect = row.getBoundingClientRect();
+  const placeholder = document.createElement('div');
+  placeholder.className = 'todo-row drag-placeholder';
+  placeholder.style.height = rect.height + 'px';
+  list.insertBefore(placeholder, row);
+  row.classList.add('drag-dragging');
+  row.style.position = 'fixed';
+  row.style.width = rect.width + 'px';
+  row.style.left = rect.left + 'px';
+  row.style.top = rect.top + 'px';
+  document.body.appendChild(row);
+  todoDrag = { id, row, list, placeholder, startClientY: ev.clientY, startTop: rect.top };
+  document.addEventListener('pointermove', onTodoDragMove);
+  document.addEventListener('pointerup', onTodoDragEnd);
+}
+function onTodoDragMove(ev) {
+  if (!todoDrag) return;
+  ev.preventDefault();
+  const dy = ev.clientY - todoDrag.startClientY;
+  todoDrag.row.style.top = (todoDrag.startTop + dy) + 'px';
+  const rowRect = todoDrag.row.getBoundingClientRect();
+  const rowCenter = rowRect.top + rowRect.height / 2;
+  const siblings = Array.from(todoDrag.list.children).filter(el => el.classList.contains('todo-row') || el === todoDrag.placeholder);
+  const phIndex = siblings.indexOf(todoDrag.placeholder);
+  for (let i = 0; i < siblings.length; i++) {
+    const sib = siblings[i];
+    if (sib === todoDrag.placeholder) continue;
+    const r = sib.getBoundingClientRect();
+    const sibCenter = r.top + r.height / 2;
+    if (i < phIndex && rowCenter < sibCenter) { todoDrag.list.insertBefore(todoDrag.placeholder, sib); break; }
+    if (i > phIndex && rowCenter > sibCenter) { todoDrag.list.insertBefore(todoDrag.placeholder, sib.nextSibling); break; }
+  }
+}
+function onTodoDragEnd() {
+  if (!todoDrag) return;
+  document.removeEventListener('pointermove', onTodoDragMove);
+  document.removeEventListener('pointerup', onTodoDragEnd);
+  const { id, row, list, placeholder } = todoDrag;
+  const finalSiblings = Array.from(list.children).filter(el => el.classList.contains('todo-row') || el === placeholder);
+  const newIndex = finalSiblings.indexOf(placeholder);
+  list.replaceChild(row, placeholder);
+  row.classList.remove('drag-dragging');
+  row.style.position = ''; row.style.width = ''; row.style.left = ''; row.style.top = '';
+  todoDrag = null;
+  reorderTodo(id, newIndex);
+}
+function reorderTodo(id, newIndex) {
+  const t = DATA.todos.find(x => x.id === id);
+  if (!t) return;
+  const sameGroup = (x) => x.listId === t.listId && x.parentId === t.parentId;
+  const oldSiblings = DATA.todos.filter(sameGroup);
+  const oldIndex = oldSiblings.findIndex(x => x.id === id);
+  if (oldIndex === -1 || oldIndex === newIndex) return;
+  DATA.todos.splice(DATA.todos.indexOf(t), 1);
+  const newSiblings = DATA.todos.filter(sameGroup);
+  const insertAt = newIndex >= newSiblings.length
+    ? DATA.todos.indexOf(newSiblings[newSiblings.length - 1]) + 1
+    : DATA.todos.indexOf(newSiblings[newIndex]);
+  DATA.todos.splice(insertAt, 0, t);
+  saveData();
+  renderTodos();
+}
+
+/* ---------------- init ---------------- */
+function startTodoApp(email) {
+  currentUserEmail = email || null;
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('app-root').style.display = '';
+  renderTodos();
+}
+
+initAuthFlow();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
