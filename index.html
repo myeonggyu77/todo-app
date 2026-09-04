@@ -131,9 +131,28 @@
     .acct-detail-pane.active { display: block; }
   }
 
-  .emoji-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .emoji-pick button { width: 34px; height: 34px; font-size: 16px; border: 1px solid var(--line); background: var(--paper-raised); border-radius: 4px; cursor: pointer; }
-  .emoji-pick button.active { border-color: var(--accent); background: var(--accent-soft); }
+  .emoji-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .emoji-pick button {
+    width: 38px; height: 38px; font-size: 18px; cursor: pointer; border: none; border-radius: 10px;
+    background: linear-gradient(160deg, #ffffff 0%, #eef2ef 65%, #e2e8e3 100%);
+    box-shadow: 0 2px 3px rgba(26,36,32,0.16), 0 1px 0 rgba(255,255,255,0.7) inset, 0 -3px 4px rgba(26,36,32,0.10) inset;
+    transition: transform 0.08s ease;
+  }
+  .emoji-pick button:hover { transform: translateY(-1px); }
+  .emoji-pick button:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(26,36,32,0.16), 0 -2px 3px rgba(26,36,32,0.14) inset; }
+  .emoji-pick button.active {
+    background: linear-gradient(160deg, #d9f0e6 0%, var(--accent-soft) 65%, #bfe4d3 100%);
+    box-shadow: 0 2px 4px rgba(15,110,86,0.28), 0 1px 0 rgba(255,255,255,0.8) inset, 0 -3px 4px rgba(15,110,86,0.18) inset;
+  }
+  /* 리스트/할일 옆에 붙는 3D풍 아이콘 뱃지 — 평평한 이모지를 광택 있는 입체 버튼 안에 넣어요. */
+  .icon3d {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 26px; height: 26px; border-radius: 8px; font-size: 14px; line-height: 1;
+    background: linear-gradient(160deg, #ffffff 0%, #eef2ef 65%, #e2e8e3 100%);
+    box-shadow: 0 2px 3px rgba(26,36,32,0.16), 0 1px 0 rgba(255,255,255,0.7) inset, 0 -2px 3px rgba(26,36,32,0.10) inset;
+    vertical-align: -6px;
+  }
+  .icon3d.sm { width: 20px; height: 20px; font-size: 11px; border-radius: 6px; vertical-align: -4px; }
 
   @media (max-width: 640px) {
     input, select, textarea { font-size: 16px; }
@@ -715,8 +734,27 @@ function parseNaturalLanguageDate(raw) {
   return { title: text.replace(/\s+/g, ' ').trim(), dueDate, recurrence };
 }
 
+/* 완료된 반복 할일은 다음 주기가 실제로 될 때까지 "완료" 상태로 목록에 남아있다가,
+   다음 예정일이 되면 자동으로 다음 회차(미완료)로 넘어가요. */
+function rolloverRecurringTodos() {
+  let changed = false;
+  const today = todayStr();
+  DATA.todos.forEach(t => {
+    if (!t.recurrence || !t.done) return;
+    let guard = 0;
+    while (guard++ < 1000) {
+      const next = todoNextOccurrenceAfter(t.recurrence, t.dueDate);
+      if (!next || next > today) break;
+      t.dueDate = next;
+      t.done = false;
+      changed = true;
+    }
+  });
+  if (changed) saveData();
+}
 function renderTodos() {
   ensureTodoListSelection();
+  rolloverRecurringTodos();
   const view = state.todoView || 'lists';
   const nav = `<div class="seg todo-view-nav">
     <button type="button" class="${view === 'today' ? 'active' : ''}" onclick="setTodoView('today')">☀️ 오늘</button>
@@ -737,7 +775,7 @@ function renderTodoListsView() {
     const items = todosInList(l.id);
     const doneCount = items.filter(t => t.done).length;
     return `<div class="acct-list-row ${selected && selected.id === l.id ? 'selected' : ''}" onclick="selectTodoList('${l.id}')">
-      <span>${l.icon || '📋'} ${escapeHtml(l.name)} <span class="form-note" style="margin:0;">${items.length}</span></span>
+      <span><span class="icon3d sm">${l.icon || '📋'}</span> ${escapeHtml(l.name)} <span class="form-note" style="margin:0;">${items.length}</span></span>
       ${l.type === 'project' ? `<span class="todo-pct-badge">${todoListProgress(l.id)}%</span>` : `<span class="form-note" style="margin:0;">${doneCount}/${items.length}</span>`}
     </div>`;
   };
@@ -817,7 +855,12 @@ function renderCalendarView() {
   const dayHtml = dayItems.length
     ? `<div class="todo-list-body">${dayItems.map(t => crossListTodoRowHtml(t)).join('')}</div>`
     : `<div class="empty">이 날짜에 예정된 할 일이 없어요.</div>`;
-  return `${calHtml}<div class="acct-detail-title" style="margin-bottom:10px;">${state.todoCalSelected}</div>${dayHtml}`;
+  return `${calHtml}
+    <div class="acct-detail-head">
+      <div class="acct-detail-title">${state.todoCalSelected}</div>
+      <button class="primary-btn" onclick="openTodoModal(null, null, null, '${state.todoCalSelected}')">+ 할 일 추가</button>
+    </div>
+    ${dayHtml}`;
 }
 function todoCalNav(delta) {
   state.todoCalMonth = shiftMonth(state.todoCalMonth, delta);
@@ -832,7 +875,7 @@ function crossListTodoRowHtml(t) {
   const list = getTodoList(t.listId);
   const overdue = t.dueDate < todayStr() && !t.done;
   const metaParts = [];
-  if (list) metaParts.push(`<span>${list.icon || '📋'} ${escapeHtml(list.name)}</span>`);
+  if (list) metaParts.push(`<span><span class="icon3d sm">${list.icon || '📋'}</span> ${escapeHtml(list.name)}</span>`);
   metaParts.push(`<span class="due ${overdue ? 'overdue' : ''}">${t.dueDate}${overdue ? ' (지남)' : ''}</span>`);
   if (t.recurrence) {
     metaParts.push(`<span class="rec-badge">${todoRecurrenceLabel(t.recurrence)}</span>`);
@@ -868,8 +911,12 @@ function backToTodoLists() {
   state.todoListId = null;
   renderTodos();
 }
+/* 완료 항목을 항상 맨 아래로 보내되(자동 정렬), 나머지는 원래(드래그) 순서를 그대로 유지해요. */
+function sortDoneToBottom(list) {
+  return list.filter(t => !t.done).concat(list.filter(t => t.done));
+}
 function renderTodoListDetail(list) {
-  const allTop = topTodos(list.id);
+  const allTop = sortDoneToBottom(topTodos(list.id));
   const hideCompleted = !!list.hideCompleted;
   const items = allTop.filter(t => !hideCompleted || !t.done);
   const pct = todoListProgress(list.id);
@@ -880,7 +927,7 @@ function renderTodoListDetail(list) {
       : `<div class="todo-empty-list">완료 항목을 숨기는 중이에요. (완료 ${allTop.filter(t => t.done).length}건)</div>`;
   return `
     <div class="acct-detail-head">
-      <div class="acct-detail-title">${list.icon || '📋'} ${escapeHtml(list.name)} <span class="form-note" style="margin:0;">${TODO_LIST_TYPE_LABEL[list.type]}</span></div>
+      <div class="acct-detail-title"><span class="icon3d">${list.icon || '📋'}</span> ${escapeHtml(list.name)} <span class="form-note" style="margin:0;">${TODO_LIST_TYPE_LABEL[list.type]}</span></div>
       <div class="btn-group">
         <button class="ghost-btn" style="font-size:12px;padding:5px 10px;" onclick="backToTodoLists()">← 목록으로</button>
         <button class="ghost-btn" onclick="openTodoListModal('${list.id}')">목록 수정</button>
@@ -906,7 +953,7 @@ function renderTodoListDetail(list) {
 }
 function todoRowHtml(t, list) {
   /* 하위 체크리스트는 리스트 형식과 무관하게 모든 할 일에 붙일 수 있어요. */
-  const subs = !t.parentId ? subTodos(t.id) : [];
+  const subs = !t.parentId ? sortDoneToBottom(subTodos(t.id)) : [];
   const visibleSubs = subs.filter(s => !list.hideCompleted || !s.done);
   const overdue = t.dueDate && !t.done && t.dueDate < todayStr();
   const metaParts = [];
@@ -919,7 +966,7 @@ function todoRowHtml(t, list) {
   if (subs.length) metaParts.push(`<span>하위 ${subs.filter(s => s.done).length}/${subs.length} 완료</span>`);
   return `
     <div class="todo-row ${t.done ? 'done' : ''}" data-todoid="${t.id}">
-      <span class="todo-drag-handle" onpointerdown="startTodoDrag(event,'${t.id}')" title="순서 변경" aria-label="순서 변경">⠿</span>
+      ${t.done ? `<span class="todo-drag-handle" style="visibility:hidden;">⠿</span>` : `<span class="todo-drag-handle" onpointerdown="startTodoDrag(event,'${t.id}')" title="순서 변경" aria-label="순서 변경">⠿</span>`}
       <input type="checkbox" class="todo-check" ${t.done ? 'checked' : ''} onchange="toggleTodoDone('${t.id}')" aria-label="완료 표시">
       <div class="todo-main">
         <div class="todo-title">${escapeHtml(t.title)}</div>
@@ -990,16 +1037,15 @@ function toggleTodoDone(id) {
   const t = DATA.todos.find(x => x.id === id);
   if (!t) return;
   if (!t.done) {
-    if (t.recurrence) {
+    if (t.recurrence && t.dueDate) {
       t.recurrence.doneDates = t.recurrence.doneDates || [];
-      if (t.dueDate) t.recurrence.doneDates.push(t.dueDate);
-      const next = todoNextOccurrenceAfter(t.recurrence, t.dueDate || todayStr());
-      if (next) { t.dueDate = next; t.done = false; }
-      else { t.done = true; t.doneAt = new Date().toISOString(); }
-    } else {
-      t.done = true; t.doneAt = new Date().toISOString();
+      if (!t.recurrence.doneDates.includes(t.dueDate)) t.recurrence.doneDates.push(t.dueDate);
     }
+    t.done = true; t.doneAt = new Date().toISOString();
   } else {
+    if (t.recurrence && t.dueDate) {
+      t.recurrence.doneDates = (t.recurrence.doneDates || []).filter(d => d !== t.dueDate);
+    }
     t.done = false; t.doneAt = null;
   }
   saveData();
@@ -1083,23 +1129,31 @@ function deleteTodoList(id) {
 }
 
 /* ---------------- todo item modal ---------------- */
-function openTodoModal(id, listId, parentId) {
+function openTodoModal(id, listId, parentId, presetDueDate) {
   const editing = id ? DATA.todos.find(t => t.id === id) : null;
-  const effListId = editing ? editing.listId : listId;
   const effParentId = editing ? editing.parentId : (parentId || null);
+  const needsListPicker = !editing && !effParentId && !listId;
+  const effListId = editing ? editing.listId : (listId || (DATA.todoLists[0] && DATA.todoLists[0].id));
   const rec = editing ? editing.recurrence : null;
   state._todoModal = { listId: effListId, parentId: effParentId, freq: rec ? rec.freq : 'none', customDates: rec && rec.freq === 'custom' ? (rec.dates || []).slice() : [], calMonth: monthKey(new Date()) };
   const isSub = !!effParentId;
   const formHtml = `
     <h3>${editing ? '할 일 수정' : (isSub ? '하위 할 일 추가' : '할 일 추가')}</h3>
     ${isSub ? `<div class="form-note">상위 할 일: ${escapeHtml((DATA.todos.find(t => t.id === effParentId) || {}).title || '')}</div>` : ''}
+    ${needsListPicker ? `
+    <div class="field">
+      <label class="field-lbl">목록</label>
+      <select id="todo-list-select" onchange="state._todoModal.listId=this.value">
+        ${DATA.todoLists.map(l => `<option value="${l.id}" ${l.id === effListId ? 'selected' : ''}>${l.icon || '📋'} ${escapeHtml(l.name)}</option>`).join('')}
+      </select>
+    </div>` : ''}
     <div class="field">
       <label class="field-lbl">할 일</label>
       <input type="text" id="todo-title" oninput="onTodoTitleInput()" value="${escapeHtml(editing ? editing.title : '')}" placeholder="무엇을 해야 하나요? (예: 내일 우유 사기, 매주 월요일 청소)">
       <div class="todo-title-hint" id="todo-title-hint"></div>
     </div>
     <div class="field"><label class="field-lbl">메모</label><textarea id="todo-memo" placeholder="선택 사항">${escapeHtml(editing ? (editing.memo || '') : '')}</textarea></div>
-    <div class="field"><label class="field-lbl">날짜</label><input type="text" class="date-field" id="todo-due" value="${editing ? (editing.dueDate || '') : ''}" placeholder="날짜 선택 (선택 사항)" readonly></div>
+    <div class="field"><label class="field-lbl">날짜</label><input type="text" class="date-field" id="todo-due" value="${editing ? (editing.dueDate || '') : (presetDueDate || '')}" placeholder="날짜 선택 (선택 사항)" readonly></div>
     ${!isSub ? `
     <div class="field">
       <label class="field-lbl">반복</label>
@@ -1293,7 +1347,7 @@ function onTodoDragMove(ev) {
   todoDrag.row.style.top = (todoDrag.startTop + dy) + 'px';
   const rowRect = todoDrag.row.getBoundingClientRect();
   const rowCenter = rowRect.top + rowRect.height / 2;
-  const siblings = Array.from(todoDrag.list.children).filter(el => el.classList.contains('todo-row') || el === todoDrag.placeholder);
+  const siblings = Array.from(todoDrag.list.children).filter(el => (el.classList.contains('todo-row') && !el.classList.contains('done')) || el === todoDrag.placeholder);
   const phIndex = siblings.indexOf(todoDrag.placeholder);
   for (let i = 0; i < siblings.length; i++) {
     const sib = siblings[i];
@@ -1309,7 +1363,7 @@ function onTodoDragEnd() {
   document.removeEventListener('pointermove', onTodoDragMove);
   document.removeEventListener('pointerup', onTodoDragEnd);
   const { id, row, list, placeholder } = todoDrag;
-  const finalSiblings = Array.from(list.children).filter(el => el.classList.contains('todo-row') || el === placeholder);
+  const finalSiblings = Array.from(list.children).filter(el => (el.classList.contains('todo-row') && !el.classList.contains('done')) || el === placeholder);
   const newIndex = finalSiblings.indexOf(placeholder);
   list.replaceChild(row, placeholder);
   row.classList.remove('drag-dragging');
@@ -1320,7 +1374,7 @@ function onTodoDragEnd() {
 function reorderTodo(id, newIndex) {
   const t = DATA.todos.find(x => x.id === id);
   if (!t) return;
-  const sameGroup = (x) => x.listId === t.listId && x.parentId === t.parentId;
+  const sameGroup = (x) => x.listId === t.listId && x.parentId === t.parentId && !x.done;
   const oldSiblings = DATA.todos.filter(sameGroup);
   const oldIndex = oldSiblings.findIndex(x => x.id === id);
   if (oldIndex === -1 || oldIndex === newIndex) return;
