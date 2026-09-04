@@ -915,6 +915,7 @@ function todoRowHtml(t, list) {
         ${metaParts.length ? `<div class="todo-meta">${metaParts.join('')}</div>` : ''}
       </div>
       <div class="todo-actions">
+        <button class="icon-btn" onclick="openTodoDueQuick(event,'${t.id}')" title="기한 설정" aria-label="기한 설정">📅</button>
         ${!t.parentId ? `<button class="icon-btn" onclick="openTodoModal(null,'${list.id}','${t.id}')" title="하위 할일 추가" aria-label="하위 할일 추가">+</button>` : ''}
         <button class="icon-btn" onclick="openTodoModal('${t.id}')" title="수정" aria-label="수정">✏️</button>
         <button class="icon-btn danger" onclick="deleteTodo('${t.id}')" title="삭제" aria-label="삭제">🗑</button>
@@ -922,6 +923,39 @@ function todoRowHtml(t, list) {
     </div>
     ${visibleSubs.length ? `<div class="todo-sub-list">${visibleSubs.map(s => todoRowHtml(s, list)).join('')}</div>` : ''}
   `;
+}
+/* 목록 화면의 📅 버튼 — 전체 수정 모달을 열지 않고 그 자리에서 바로 날짜 선택 팝업을 띄워요. */
+function openTodoDueQuick(ev, id) {
+  ev.stopPropagation();
+  const t = DATA.todos.find(x => x.id === id);
+  if (!t) return;
+  let input = document.getElementById('todo-quick-due-input');
+  if (!input) {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'todo-quick-due-input';
+    input.className = 'date-field';
+    input.readOnly = true;
+    input.setAttribute('aria-hidden', 'true');
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    input.style.width = '1px';
+    input.style.height = '1px';
+    input.style.pointerEvents = 'none';
+    document.body.appendChild(input);
+  }
+  const rect = ev.currentTarget.getBoundingClientRect();
+  input.style.top = rect.bottom + 'px';
+  input.style.left = rect.left + 'px';
+  input.value = t.dueDate || '';
+  input.onchange = () => {
+    const tt = DATA.todos.find(x => x.id === id);
+    if (!tt) return;
+    tt.dueDate = input.value || null;
+    saveData();
+    renderTodos();
+  };
+  openDatePicker(input);
 }
 /* 빠른 입력에서 "내일", "매주 월요일" 같은 자연어를 날짜/반복으로 자동 인식해요. */
 function onTodoQuickAddKeydown(e, listId) {
