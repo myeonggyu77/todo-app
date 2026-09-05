@@ -133,6 +133,10 @@
   .acct-list-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 10px; border-radius: 14px; cursor: pointer; font-size: 14px; font-weight: 600; }
   .acct-list-row:hover { background: var(--line-soft); }
   .acct-list-row.selected { background: var(--accent-tint); }
+  .acct-list-row.drag-hover { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent-line); }
+  .acct-list-pane.drag-reveal { display: block !important; position: fixed !important; inset: 0; width: auto !important; z-index: 9997; background: var(--paper); padding: 18px; overflow-y: auto; animation: drag-reveal-in .16s ease-out; }
+  .drag-reveal-label { font-size: 13px; font-weight: 700; color: var(--ink-faint); text-align: center; margin-bottom: 12px; }
+  @keyframes drag-reveal-in { from { transform: translateX(-16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   .acct-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .acct-detail-title { font-size: 20px; font-weight: 700; font-family: var(--display); display: flex; align-items: center; gap: 10px; }
   @media (max-width: 860px) {
@@ -199,13 +203,6 @@
   .todo-date-chip button { border: none; background: none; color: inherit; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
   .drag-source-dim { opacity: 0.4; }
   .todo-drag-ghost { position: fixed; z-index: 9999; box-shadow: 0 10px 24px rgba(0,0,0,0.25); opacity: 0.96; pointer-events: none; margin: 0; }
-  .todo-move-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,0.12); padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform .15s ease; }
-  .todo-move-bar.show { transform: translateY(0); }
-  .todo-move-bar-label { font-size: 12px; font-weight: 700; color: var(--ink-faint); text-align: center; margin-bottom: 10px; }
-  .todo-move-bar-row { display: flex; gap: 10px; overflow-x: auto; justify-content: center; }
-  .todo-move-target { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 16px; flex-shrink: 0; }
-  .todo-move-target span { font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .todo-move-target.hover { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent-line); }
   .todo-inline-memo { border: none; background: transparent; width: 100%; height: auto; padding: 2px 0; margin: 4px 0 0; font-size: 13px; color: var(--ink-soft); border-radius: 8px; }
   .todo-inline-memo::placeholder { color: var(--ink-faint); }
   .todo-inline-memo:hover { background: var(--line-soft); padding: 2px 6px; margin-left: -6px; }
@@ -858,7 +855,7 @@ function renderTodoListsView() {
     const items = todosInList(l.id);
     const doneCount = items.filter(t => t.done).length;
     const isProject = l.type === 'project';
-    return `<div class="acct-list-row ${selected && selected.id === l.id ? 'selected' : ''}" onclick="selectTodoList('${l.id}')" style="gap:12px;">
+    return `<div class="acct-list-row ${selected && selected.id === l.id ? 'selected' : ''}" data-listid="${l.id}" onclick="selectTodoList('${l.id}')" style="gap:12px;">
       ${iconBadgeHtml(l, 40)}
       <span style="flex:1;min-width:0;">
         <div style="font-weight:700;">${escapeHtml(l.name)}</div>
@@ -1480,15 +1477,18 @@ function submitTodo(id) {
 
 /* ---------------- 할 일을 드래그해서 다른 목록으로 이동 (터치/마우스 공용) ----------------
    할 일 정렬은 이제 기한 기준으로 자동 처리되므로, 드래그는 순서 변경 대신
-   "다른 목록으로 옮기기" 용도로만 써요. 드래그를 시작하면 화면에 목록 칩 바가
-   뜨고, 그 위에 놓으면 해당 목록으로 이동해요 (하위 할일도 함께 이동). */
+   "다른 목록으로 옮기기" 용도로만 써요. 카카오톡에서 채팅을 다른 채팅방으로
+   드래그하는 것처럼, 왼쪽 "목록" 패널의 항목 위에 직접 끌어다 놓으면 이동돼요.
+   (모바일 화면처럼 목록 패널이 가려져 있으면, 드래그하는 동안만 잠깐 화면
+   전체를 덮는 패널로 펼쳐서 놓을 수 있게 해줘요.) */
 let todoDrag = null;
 function startTodoDrag(ev, id) {
   ev.preventDefault();
   if (todoDrag) return;
   const row = ev.currentTarget.closest('.todo-row');
   const t = DATA.todos.find(x => x.id === id);
-  if (!row || !t) return;
+  const pane = document.querySelector('.acct-list-pane');
+  if (!row || !t || !pane) return;
   if (DATA.todoLists.length < 2) return;
   const rect = row.getBoundingClientRect();
   const ghost = row.cloneNode(true);
@@ -1499,16 +1499,19 @@ function startTodoDrag(ev, id) {
   document.body.appendChild(ghost);
   row.classList.add('drag-source-dim');
 
-  const otherLists = DATA.todoLists.filter(l => l.id !== t.listId);
-  const bar = document.createElement('div');
-  bar.className = 'todo-move-bar';
-  bar.innerHTML = `<div class="todo-move-bar-label">여기에 놓아서 목록 이동</div><div class="todo-move-bar-row">${otherLists.map(l =>
-    `<div class="todo-move-target" data-listid="${l.id}">${iconBadgeHtml(l, 30)}<span>${escapeHtml(l.name)}</span></div>`
-  ).join('')}</div>`;
-  document.body.appendChild(bar);
-  requestAnimationFrame(() => bar.classList.add('show'));
+  /* 데스크탑처럼 목록 패널이 이미 옆에 보이는 상태면 그대로 두고, 모바일처럼
+     선택된 목록 때문에 패널이 가려져 있을 때만 화면을 덮는 패널로 펼쳐요. */
+  const wasHidden = getComputedStyle(pane).display === 'none';
+  let label = null;
+  if (wasHidden) {
+    label = document.createElement('div');
+    label.className = 'drag-reveal-label';
+    label.textContent = '여기에 놓아서 목록 이동';
+    pane.insertBefore(label, pane.firstChild);
+    pane.classList.add('drag-reveal');
+  }
 
-  todoDrag = { id, row, ghost, bar, startClientX: ev.clientX, startClientY: ev.clientY, startLeft: rect.left, startTop: rect.top };
+  todoDrag = { id, row, ghost, pane, label, wasHidden, startClientX: ev.clientX, startClientY: ev.clientY, startLeft: rect.left, startTop: rect.top };
   document.addEventListener('pointermove', onTodoDragMove);
   document.addEventListener('pointerup', onTodoDragEnd);
 }
@@ -1520,19 +1523,23 @@ function onTodoDragMove(ev) {
   todoDrag.ghost.style.left = (todoDrag.startLeft + dx) + 'px';
   todoDrag.ghost.style.top = (todoDrag.startTop + dy) + 'px';
   const under = document.elementFromPoint(ev.clientX, ev.clientY);
-  const chip = under && under.closest('.todo-move-target');
-  todoDrag.bar.querySelectorAll('.todo-move-target').forEach(el => el.classList.toggle('hover', el === chip));
+  const rowEl = under && under.closest('.acct-list-row');
+  todoDrag.pane.querySelectorAll('.acct-list-row').forEach(el => el.classList.toggle('drag-hover', el === rowEl));
 }
 function onTodoDragEnd(ev) {
   if (!todoDrag) return;
   document.removeEventListener('pointermove', onTodoDragMove);
   document.removeEventListener('pointerup', onTodoDragEnd);
-  const { id, row, ghost, bar } = todoDrag;
+  const { id, row, ghost, pane, label, wasHidden } = todoDrag;
   const under = document.elementFromPoint(ev.clientX, ev.clientY);
-  const chip = under && under.closest('.todo-move-target');
-  const targetListId = chip ? chip.dataset.listid : null;
+  const rowEl = under && under.closest('.acct-list-row');
+  const targetListId = rowEl ? rowEl.dataset.listid : null;
   ghost.remove();
-  bar.remove();
+  pane.querySelectorAll('.acct-list-row').forEach(el => el.classList.remove('drag-hover'));
+  if (wasHidden) {
+    label.remove();
+    pane.classList.remove('drag-reveal');
+  }
   row.classList.remove('drag-source-dim');
   todoDrag = null;
   if (targetListId) moveTodoToList(id, targetListId);
