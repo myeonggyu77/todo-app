@@ -791,10 +791,12 @@ function renderTodos() {
     <button type="button" class="${view === 'today' ? 'active' : ''}" onclick="setTodoView('today')">☀️ 오늘</button>
     <button type="button" class="${view === 'lists' ? 'active' : ''}" onclick="setTodoView('lists')">📋 목록</button>
     <button type="button" class="${view === 'calendar' ? 'active' : ''}" onclick="setTodoView('calendar')">📅 캘린더</button>
+    <button type="button" class="${view === 'done' ? 'active' : ''}" onclick="setTodoView('done')">✅ 완료</button>
   </div>`;
   let bodyHtml;
   if (view === 'today') bodyHtml = renderTodayView();
   else if (view === 'calendar') bodyHtml = renderCalendarView();
+  else if (view === 'done') bodyHtml = renderDoneView();
   else bodyHtml = renderTodoListsView();
   document.getElementById('todo-root').innerHTML = nav + bodyHtml;
 }
@@ -834,7 +836,7 @@ function renderTodayView() {
   const hide = !!state.todayHideCompleted;
   const today = todayStr();
   const items = DATA.todos
-    .filter(t => t.dueDate && t.dueDate <= today && (!hide || !t.done))
+    .filter(t => t.dueDate && t.dueDate <= today && !(t.done && t.dueDate < today) && (!hide || !t.done))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const rowsHtml = items.length
     ? `<div class="todo-list-body">${items.map(t => crossListTodoRowHtml(t)).join('')}</div>`
@@ -852,6 +854,21 @@ function renderTodayView() {
 function toggleTodayHideCompleted() {
   state.todayHideCompleted = !state.todayHideCompleted;
   renderTodos();
+}
+/* "완료" 보기 — 리스트 구분 없이 완료된 할 일을 모아서 모아봐요 (최근 완료 순). */
+function renderDoneView() {
+  const items = DATA.todos
+    .filter(t => t.done)
+    .sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
+  const rowsHtml = items.length
+    ? `<div class="todo-list-body">${items.map(t => crossListTodoRowHtml(t)).join('')}</div>`
+    : `<div class="empty">완료된 할 일이 없어요.</div>`;
+  return `
+    <div class="acct-detail-head">
+      <div class="acct-detail-title">✅ 완료된 할 일</div>
+    </div>
+    ${rowsHtml}
+  `;
 }
 /* "캘린더" 보기 — 리스트 구분 없이 날짜별 할 일 개수를 달력으로 보고, 날짜를 클릭하면 그날 할 일을 모아봐요. */
 function renderCalendarView() {
