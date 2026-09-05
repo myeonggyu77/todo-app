@@ -2,7 +2,7 @@
 // 앱 껍데기(HTML/아이콘)만 최소한으로 캐싱해서 "홈 화면에서 바로 열리는" 경험을 위한 용도예요.
 // 할 일 데이터는 이 기기의 localStorage와 (로그인 시) 클라우드에 저장돼요.
 
-const CACHE_NAME = 'todo-app-shell-v1';
+const CACHE_NAME = 'todo-app-shell-v2';
 const SHELL_FILES = [
   './index.html',
   './manifest.json',
