@@ -400,7 +400,7 @@ const LS_KEY = 'todo-app-data-v1';
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 function defaultData() {
-  return { todoLists: [{ id: uid(), name: '할 일', icon: '📋', type: 'simple', colorHue: 230, hideCompleted: false }], todos: [] };
+  return { todoLists: [{ id: uid(), name: '할 일', icon: '📋', type: 'simple', colorHue: 230 }], todos: [] };
 }
 function loadData() {
   try {
@@ -885,9 +885,8 @@ function renderTodoListsView() {
 function renderTodayView() {
   const hide = !!state.todayHideCompleted;
   const today = todayStr();
-  const items = DATA.todos
-    .filter(t => t.dueDate && t.dueDate <= today && !(t.done && t.dueDate < today) && (!hide || !t.done))
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const items = sortDoneToBottom(DATA.todos
+    .filter(t => t.dueDate && t.dueDate <= today && !(t.done && t.dueDate < today) && (!hide || !t.done)));
   const rowsHtml = items.length
     ? `<div class="todo-list-body">${items.map(t => crossListTodoRowHtml(t)).join('')}</div>`
     : `<div class="empty">오늘 예정된 할 일이 없어요.</div>`;
@@ -1027,16 +1026,13 @@ function sortDoneToBottom(list) {
   const sorted = list.slice().sort((a, b) => key(a).localeCompare(key(b)));
   return sorted.filter(t => !t.done).concat(sorted.filter(t => t.done));
 }
+/* 완료된 할 일은 "완료" 탭으로 옮겨간 것으로 보고, 목록 탭에는 미완료 항목만 보여줘요. */
 function renderTodoListDetail(list) {
-  const allTop = sortDoneToBottom(topTodos(list.id));
-  const hideCompleted = !!list.hideCompleted;
-  const items = allTop.filter(t => !hideCompleted || !t.done);
+  const items = sortDoneToBottom(topTodos(list.id)).filter(t => !t.done);
   const pct = todoListProgress(list.id);
-  const rowsHtml = !allTop.length
-    ? `<div class="empty">등록된 할 일이 없어요.</div>`
-    : items.length
-      ? `<div class="todo-list-body" id="todo-body">${items.map(t => todoRowHtml(t, list)).join('')}</div>`
-      : `<div class="todo-empty-list">완료 항목을 숨기는 중이에요. (완료 ${allTop.filter(t => t.done).length}건)</div>`;
+  const rowsHtml = items.length
+    ? `<div class="todo-list-body" id="todo-body">${items.map(t => todoRowHtml(t, list)).join('')}</div>`
+    : `<div class="empty">등록된 할 일이 없어요.</div>`;
   return `
     <div class="acct-detail-head">
       <div class="acct-detail-title">${iconBadgeHtml(list, 40)} ${escapeHtml(list.name)} <span class="pill pill-count">${TODO_LIST_TYPE_LABEL[list.type]}</span></div>
@@ -1056,7 +1052,6 @@ function renderTodoListDetail(list) {
         <input class="search-input" id="todo-quick-add" placeholder="할 일 입력 후 Enter" onkeydown="onTodoQuickAddKeydown(event,'${list.id}')" style="flex:1;min-width:0;">
       </div>
       <div class="btn-group">
-        <button class="ghost-btn" onclick="toggleTodoHideCompleted('${list.id}')">완료 항목 ${hideCompleted ? '보이기' : '숨기기'}</button>
         <button class="primary-btn" onclick="openTodoModal(null,'${list.id}')">+ 할 일 추가</button>
       </div>
     </div>
@@ -1066,7 +1061,7 @@ function renderTodoListDetail(list) {
 function todoRowHtml(t, list) {
   /* 하위 체크리스트는 리스트 형식과 무관하게 모든 할 일에 붙일 수 있어요. */
   const subs = !t.parentId ? sortDoneToBottom(subTodos(t.id)) : [];
-  const visibleSubs = subs.filter(s => !list.hideCompleted || !s.done);
+  const visibleSubs = subs.filter(s => !s.done);
   const overdue = t.dueDate && !t.done && t.dueDate < todayStr();
   const metaParts = [];
   if (t.dueDate) metaParts.push(`<span class="pill pill-due ${overdue ? 'overdue' : ''}">📅 ${t.dueDate}${t.dueTime ? ' ' + t.dueTime : ''}${overdue ? ' 지남' : ''}</span>`);
@@ -1187,14 +1182,6 @@ function duplicateTodo(id) {
   renderTodos();
   showToast('할 일을 복사했어요.', 'success', 2000);
 }
-function toggleTodoHideCompleted(listId) {
-  const list = getTodoList(listId);
-  if (!list) return;
-  list.hideCompleted = !list.hideCompleted;
-  saveData();
-  renderTodos();
-}
-
 /* ---------------- todo list modal ---------------- */
 function openTodoListModal(id) {
   const editing = id ? getTodoList(id) : null;
@@ -1252,7 +1239,7 @@ function submitTodoList(id) {
     const list = getTodoList(id);
     list.name = name; list.icon = icon; list.type = type; list.colorHue = colorHue;
   } else {
-    const list = { id: uid(), name, icon, type, colorHue, hideCompleted: false };
+    const list = { id: uid(), name, icon, type, colorHue };
     DATA.todoLists.push(list);
     state.todoListId = list.id;
   }
